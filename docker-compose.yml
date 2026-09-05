@@ -1,0 +1,179 @@
+name: roadwatch
+
+services:
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: roadwatch-kafka
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  kafka-init:
+    image: apache/kafka:3.8.0
+    container_name: roadwatch-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command: >
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic raw_frames --partitions 6 --replication-factor 1 &&
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic road_damage_events --partitions 6 --replication-factor 1 &&
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic dead_letter --partitions 3 --replication-factor 1
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: roadwatch-kafka-exporter
+    command: ["--kafka.server=kafka:9092"]
+    ports:
+      - "9308:9308"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
+  postgres:
+    image: postgres:16
+    container_name: roadwatch-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-roadwatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-roadwatch}
+      POSTGRES_DB: ${POSTGRES_DB:-roadwatch}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-roadwatch} -d ${POSTGRES_DB:-roadwatch}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: roadwatch-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: roadwatch-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  producer:
+    build: ./streaming
+    container_name: roadwatch-producer
+    restart: unless-stopped
+    command: ["python", "producer.py", "--loop"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      FRAMES_DIR: /app/frames
+      METRICS_PORT: "8001"
+      FRAME_DELAY: ${FRAME_DELAY:-0.15}
+    volumes:
+      - ./data/frames:/app/frames:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/metrics', timeout=2)"]
+      interval: 10s
+      timeout: 4s
+      retries: 6
+
+  yolo-consumer:
+    build: ./streaming
+    container_name: roadwatch-yolo-consumer
+    restart: unless-stopped
+    command: ["python", "yolo_consumer.py"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      MODEL_WEIGHTS: /app/weights/best.pt
+      CONF_THRES: ${CONF_THRES:-0.25}
+      METRICS_PORT: "8002"
+    volumes:
+      - ./model/weights:/app/weights:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/metrics', timeout=2)"]
+      interval: 10s
+      timeout: 4s
+      retries: 6
+
+  analytics-consumer:
+    build: ./streaming
+    container_name: roadwatch-analytics-consumer
+    restart: unless-stopped
+    command: ["python", "analytics_consumer.py"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-roadwatch}:${POSTGRES_PASSWORD:-roadwatch}@postgres:5432/${POSTGRES_DB:-roadwatch}
+      METRICS_PORT: "8003"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/metrics', timeout=2)"]
+      interval: 10s
+      timeout: 4s
+      retries: 6
+
+  spark:
+    image: bitnamilegacy/spark:3.5.1
+    container_name: roadwatch-spark
+    profiles: ["spark"]
+    command:
+      - /opt/bitnami/spark/bin/spark-submit
+      - --packages
+      - org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.postgresql:postgresql:42.7.3
+      - /app/spark_stream.py
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-roadwatch}
+      POSTGRES_USER: ${POSTGRES_USER:-roadwatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-roadwatch}
+    volumes:
+      - ./streaming/spark_stream.py:/app/spark_stream.py:ro
+      - spark_checkpoint:/checkpoint
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  spark_checkpoint:

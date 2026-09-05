@@ -1,0 +1,44 @@
+# Secrets / local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# ML / experiment outputs
+runs/
+wandb/
+*.onnx
+*.engine
+*.torchscript
+
+# Keep the portfolio checkpoint committed explicitly
+!model/weights/best.pt
+
+# Data downloaded for training
+/data/rdd2022_large/
+/data/rdd2022_raw/
+
+# Spark / local runtime
+.checkpoint/
+metastore_db/
+spark-warehouse/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
