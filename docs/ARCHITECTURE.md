@@ -21,98 +21,11 @@ The design follows five principles:
 
 ## 3. Logical architecture
 
-```mermaid
-flowchart TB
-    subgraph EDGE[Edge / Source]
-        A[Road camera or replay frames]
-    end
-
-    subgraph INGEST[Ingestion]
-        B[Frame producer]
-    end
-
-    subgraph KAFKA[Kafka backbone]
-        C[(raw_frames)]
-        D[(road_damage_events)]
-        E[(dead_letter)]
-    end
-
-    subgraph INFER[Inference]
-        F[YOLOv8s worker]
-        W[(best.pt)]
-        W --> F
-    end
-
-    subgraph QUALITY[Quality + Persistence]
-        G[Contract validator / event sink]
-        H[(PostgreSQL detection_events)]
-    end
-
-    subgraph STREAM[Streaming Analytics]
-        I[Spark Structured Streaming]
-        J[(PostgreSQL segment_window_agg)]
-    end
-
-    subgraph OPS[Operational Plane]
-        K[Kafka Exporter]
-        L[Prometheus]
-        M[Grafana]
-        N[Terraform]
-        O[Docker Compose]
-        P[GitHub Actions]
-    end
-
-    A --> B --> C --> F --> D
-    F -->|failure| E
-    D --> G --> H
-    G -->|invalid contract| E
-    D --> I --> J
-    C -. lag .-> K
-    D -. lag .-> K
-    B -. metrics .-> L
-    F -. metrics .-> L
-    G -. metrics .-> L
-    K --> L --> M
-    N -. provisions .-> M
-    O -. lifecycle .-> B
-    O -. lifecycle .-> F
-    O -. lifecycle .-> G
-    P -. validates .-> O
-```
+![RoadWatch logical streaming architecture](assets/architecture/platform-architecture.png)
 
 ## 4. Data plane sequence
 
-```mermaid
-sequenceDiagram
-    participant P as Frame Producer
-    participant K as Kafka
-    participant Y as YOLO Worker
-    participant V as Validator / Sink
-    participant S as Spark
-    participant DB as PostgreSQL
-
-    P->>K: raw_frames(frame_id, trace_id, image_b64)
-    K->>Y: consume frame from roadwatch-inference group
-    Y->>Y: decode + YOLOv8s inference
-    Y->>K: road_damage_events(event_id, class, confidence, bbox, severity)
-    Note over Y,K: commit raw-frame offset only after output acknowledgement
-
-    par durable event path
-        K->>V: consume detection event
-        V->>V: version / field / enum / range validation
-        alt valid
-            V->>DB: INSERT ... ON CONFLICT DO NOTHING
-            Note over V,DB: commit detection offset after successful / duplicate-safe DB result
-        else invalid
-            V->>K: dead_letter(reason + original payload)
-            Note over V,K: commit after DLQ acknowledgement
-        end
-    and streaming analytics path
-        K->>S: consume detection event
-        S->>S: event-time parse + 20s watermark + 10s window
-        S->>DB: segment_window_agg
-    end
-```
+![RoadWatch event path, validation and recovery](assets/architecture/event-path.png)
 
 ## 5. Kafka topology
 
@@ -178,15 +91,7 @@ A named Docker volume backs the Structured Streaming checkpoint path so query pr
 
 The operational plane remains independent from business processing:
 
-```mermaid
-flowchart LR
-    P[Producer metrics] --> PROM[Prometheus]
-    Y[YOLO metrics] --> PROM
-    V[Validation / sink metrics] --> PROM
-    KE[Kafka Exporter] --> PROM
-    PROM --> G[Grafana]
-    TF[Terraform] -. dashboard as code .-> G
-```
+![RoadWatch operational observability plane](assets/architecture/observability-plane.png)
 
 This separation means a backlog or failure can still be diagnosed while a processing stage is degraded.
 

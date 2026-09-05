@@ -47,75 +47,9 @@ RoadWatch is designed first as an **observable and reliable streaming data platf
 
 # Platform architecture
 
-```mermaid
-flowchart TB
-    subgraph EDGE[Input / Edge Layer]
-        CAM[Road camera / dashcam frames]
-        REPLAY[Replay dataset frames]
-    end
-
-    subgraph INGEST[Ingestion Layer]
-        PROD[Frame Producer\nmetadata + base64 payload\nKafka key = frame_id]
-    end
-
-    subgraph BUS[Kafka Event Backbone]
-        RAW[(raw_frames\n6 partitions)]
-        EVENTS[(road_damage_events\n6 partitions)]
-        DLQ[(dead_letter\n3 partitions)]
-        KEXP[Kafka Exporter]
-    end
-
-    subgraph ML[Computer Vision Inference]
-        YOLO[YOLOv8s Inference Worker\n640×640 detector\nconfidence thresholding\nseverity enrichment]
-        WEIGHTS[(best.pt\ntrained checkpoint)]
-        WEIGHTS --> YOLO
-    end
-
-    subgraph PROCESS[Processing + Quality Layer]
-        VALID[Validation / Event Sink\ncontract checks\nmanual offset commits]
-        SPARK[Spark Structured Streaming\n10 s windows\n20 s watermark\ncheckpointed state]
-    end
-
-    subgraph DATA[Persistence Layer]
-        EVENTDB[(PostgreSQL\ndetection_events)]
-        AGGDB[(PostgreSQL\nsegment_window_agg)]
-    end
-
-    subgraph OBS[Observability Layer]
-        PROM[Prometheus]
-        GRAF[Grafana\nthroughput · lag · p95 latency\nDLQ · DQ · service health]
-    end
-
-    subgraph PLATFORM[Platform / Delivery Layer]
-        DC[Docker Compose]
-        TF[Terraform]
-        CI[GitHub Actions]
-    end
-
-    CAM --> PROD
-    REPLAY --> PROD
-    PROD --> RAW
-    RAW --> YOLO
-    YOLO --> EVENTS
-    YOLO -->|decode / inference failure| DLQ
-    EVENTS --> VALID
-    VALID --> EVENTDB
-    VALID -->|contract violation| DLQ
-    EVENTS --> SPARK
-    SPARK --> AGGDB
-
-    PROD -. metrics .-> PROM
-    YOLO -. metrics .-> PROM
-    VALID -. metrics .-> PROM
-    KEXP -. consumer lag .-> PROM
-    PROM --> GRAF
-
-    DC -. orchestrates .-> PROD
-    DC -. orchestrates .-> YOLO
-    DC -. orchestrates .-> VALID
-    TF -. provisions .-> GRAF
-    CI -. validates .-> DC
-```
+<p align="center">
+  <img src="docs/assets/architecture/platform-architecture.png" alt="RoadWatch streaming reliability and observability architecture" width="100%" />
+</p>
 
 The architecture intentionally separates **data plane**, **processing plane**, and **operational plane** so failures remain observable and replayable instead of being hidden inside one monolithic pipeline.
 
@@ -350,21 +284,9 @@ The contract is intentionally stable across model, persistence and streaming-ana
 
 The local implementation preserves boundaries that map cleanly to a larger deployment:
 
-```mermaid
-flowchart LR
-    FLEET[Camera / edge fleet] --> GATEWAY[Ingestion gateway]
-    GATEWAY --> MK[(Replicated Kafka cluster)]
-    MK --> GPU[Autoscaled GPU inference workers]
-    GPU --> EV[(Versioned detection topics)]
-    EV --> SINK[Operational event sink]
-    EV --> STREAM[Managed Spark / Flink]
-    SINK --> PG[(Managed PostgreSQL)]
-    STREAM --> WH[(Analytics store)]
-    MK -. lag .-> OBS[Central observability]
-    GPU -. metrics .-> OBS
-    STREAM -. metrics .-> OBS
-    PG -. health .-> OBS
-```
+<p align="center">
+  <img src="docs/assets/architecture/scale-out.png" alt="RoadWatch scale-out deployment architecture" width="100%" />
+</p>
 
 | Local implementation | Scale-out equivalent |
 |---|---|
