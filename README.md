@@ -146,6 +146,15 @@ docker compose start yolo-consumer
 
 The recorded demo includes this backlog/recovery behavior.
 
+
+https://github.com/user-attachments/assets/e7f234fb-17dd-470b-98a0-dbcd207efe95
+
+
+
+Uploading RoadWatch_Demo_GitHub.mp4…
+
+
+
 **[▶ Watch RoadWatch_Demo.mp4](demo/RoadWatch_Demo.mp4)**
 
 ---
