@@ -1,6 +1,6 @@
 # Dataset Notes
 
-RoadWatch uses imagery from the **Road Damage Dataset 2022 (RDD2022)** for detector training, validation and local streaming replay.
+RoadWatch uses imagery from the **Road Damage Dataset 2022 (RDD2022)** for detector training, validation and local streaming replay on Kaggle.
 
 ## Repository data
 
