@@ -1,6 +1,10 @@
 # RoadWatch Demo
 
-**[▶ Watch the full recorded demo](../demo/RoadWatch_Demo.mp4)**
+
+
+https://github.com/user-attachments/assets/9e73c9a4-7f67-4d17-91c4-a22bfa8955f1
+
+
 
 The demo presents RoadWatch as one connected system rather than separate model and data-engineering pieces.
 
