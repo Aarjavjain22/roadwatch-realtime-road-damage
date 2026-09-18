@@ -24,6 +24,10 @@ The primary engineering focus is making the streaming system **observable, repla
   <a href="docs/MODEL.md">CV model</a>
 </p>
 
+
+https://github.com/user-attachments/assets/bb485dba-33da-427b-a411-da4d17217e04
+
+
 ---
 
 ## What RoadWatch demonstrates
