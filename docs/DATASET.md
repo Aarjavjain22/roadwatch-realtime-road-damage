@@ -2,6 +2,8 @@
 
 RoadWatch uses imagery from the **Road Damage Dataset 2022 (RDD2022)** for detector training, validation and local streaming replay on Kaggle.
 
+Link to the dataset : https://www.kaggle.com/datasets/aliabdelmenam/rdd-2022
+
 ## Repository data
 
 The repository contains a small subset of road images under `data/frames/` so the end-to-end Kafka/inference pipeline can run immediately without committing the full training dataset.
