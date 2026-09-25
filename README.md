@@ -11,8 +11,7 @@ The primary engineering focus is making the streaming system **observable, repla
 </p>
 
 <p align="center">
-  <a href="demo/RoadWatch_Demo.mp4"><strong>▶ Watch the full end-to-end demo</strong></a>
-  &nbsp;·&nbsp;
+  
   <a href="docs/ARCHITECTURE.md">Architecture</a>
   &nbsp;·&nbsp;
   <a href="docs/RELIABILITY.md">Reliability</a>
